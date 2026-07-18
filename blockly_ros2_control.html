@@ -1,0 +1,1578 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blockly ROS2 控制平台</title>
+
+<!-- ============================================================ -->
+<!-- 外部函式庫 (CDN)：Blockly 本體 / 內建方塊 / JavaScript產生器 / 中文語系 / roslibjs -->
+<!-- ============================================================ -->
+<script src="https://unpkg.com/blockly@13.1.1/blockly_compressed.js"></script>
+<script src="https://unpkg.com/blockly@13.1.1/blocks_compressed.js"></script>
+<script src="https://unpkg.com/blockly@13.1.1/msg/zh-hant.js"></script>
+<script src="https://unpkg.com/blockly@13.1.1/javascript_compressed.js"></script>
+<script src="https://unpkg.com/roslib@1.4.1/build/roslib.min.js"></script>
+
+<style>
+  /* ========================================================== */
+  /* 版面配色：模仿 Visual Studio Code 深色主題                   */
+  /* ========================================================== */
+  :root {
+    --vscode-bg: #1e1e1e;            /* 主編輯區背景 */
+    --vscode-bg-side: #252526;       /* 側邊欄背景 */
+    --vscode-bg-panel: #2d2d30;      /* 面板 / 輸入框背景 */
+    --vscode-border: #3c3c3c;        /* 邊框顏色 */
+    --vscode-text: #cccccc;          /* 主要文字顏色 */
+    --vscode-text-dim: #9d9d9d;      /* 次要文字顏色 */
+    --vscode-accent: #007acc;        /* 主要藍色 (Connect 等) */
+    --vscode-accent-hover: #1189d8;
+    --vscode-green: #16825d;         /* 成功 / Run */
+    --vscode-green-hover: #1c9e70;
+    --vscode-red: #c74e39;           /* 錯誤 / Stop / Disconnect */
+    --vscode-red-hover: #e0553f;
+    --vscode-yellow: #cca700;        /* 警告 */
+    --titlebar-height: 36px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: var(--vscode-bg);
+    color: var(--vscode-text);
+    font-family: "Segoe UI", "Microsoft JhengHei", "PingFang TC", Arial, sans-serif;
+  }
+
+  /* -------------------- 頂部標題列 -------------------- */
+  #titlebar {
+    height: var(--titlebar-height);
+    background-color: #323233;
+    border-bottom: 1px solid var(--vscode-border);
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    color: #eeeeee;
+    user-select: none;
+  }
+  #titlebar .dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 8px;
+    background: linear-gradient(135deg, #007acc, #16825d);
+  }
+
+  /* -------------------- 主要版面：左右分割 -------------------- */
+  #app {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    height: calc(100% - var(--titlebar-height));
+  }
+
+  /* 左側：Blockly 編輯器區域，佔大部分空間 */
+  #blocklyPanel {
+    flex: 1 1 auto;
+    min-width: 0;
+    position: relative;
+    background-color: var(--vscode-bg);
+    border-right: 1px solid var(--vscode-border);
+  }
+  #blocklyDiv {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+  }
+
+  /* 右側：控制面板 */
+  #controlPanel {
+    flex: 0 0 380px;
+    max-width: 420px;
+    background-color: var(--vscode-bg-side);
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    gap: 12px;
+    overflow-y: auto;
+  }
+
+  /* -------------------- 區塊卡片樣式 -------------------- */
+  .panel-section {
+    background-color: var(--vscode-bg-panel);
+    border: 1px solid var(--vscode-border);
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+  .panel-title {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--vscode-text-dim);
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--vscode-border);
+  }
+
+  label.field-label {
+    display: block;
+    font-size: 12px;
+    color: var(--vscode-text-dim);
+    margin: 6px 0 4px;
+  }
+
+  input[type="text"], input[type="number"] {
+    width: 100%;
+    padding: 6px 8px;
+    background-color: #3c3c3c;
+    border: 1px solid var(--vscode-border);
+    border-radius: 3px;
+    color: var(--vscode-text);
+    font-size: 13px;
+    outline: none;
+  }
+  input[type="text"]:focus, input[type="number"]:focus {
+    border-color: var(--vscode-accent);
+  }
+
+  /* -------------------- 按鈕樣式 -------------------- */
+  .btn-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  button.vscode-btn {
+    flex: 1 1 auto;
+    min-width: 90px;
+    padding: 7px 10px;
+    font-size: 13px;
+    font-weight: 500;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    color: #ffffff;
+    background-color: #3c3c3c;
+    transition: background-color 0.15s ease-in-out;
+    white-space: nowrap;
+  }
+  button.vscode-btn:hover:not(:disabled) { filter: brightness(1.12); }
+  button.vscode-btn:active:not(:disabled) { filter: brightness(0.92); }
+  button.vscode-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .btn-primary  { background-color: var(--vscode-accent); }
+  .btn-success  { background-color: var(--vscode-green); }
+  .btn-danger   { background-color: var(--vscode-red); }
+  .btn-neutral  { background-color: #4d4d50; }
+
+  /* -------------------- 連線狀態顯示 -------------------- */
+  #connectionStatus {
+    margin-top: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 10px;
+    border-radius: 3px;
+    text-align: center;
+    letter-spacing: 0.3px;
+  }
+  #connectionStatus.disconnected {
+    background-color: rgba(199, 78, 57, 0.18);
+    color: #ff8a75;
+  }
+  #connectionStatus.connected {
+    background-color: rgba(22, 130, 93, 0.2);
+    color: #4ec9a0;
+  }
+
+  /* -------------------- Console 輸出區 -------------------- */
+  .panel-section.console-section {
+    flex: 1 1 auto;
+    min-height: 160px;
+    display: flex;
+    flex-direction: column;
+  }
+  #consoleBox {
+    flex: 1 1 auto;
+    background-color: #1e1e1e;
+    border: 1px solid var(--vscode-border);
+    border-radius: 3px;
+    padding: 8px;
+    overflow-y: auto;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .log-line { white-space: pre-wrap; word-break: break-all; }
+  .log-info    { color: #d4d4d4; }
+  .log-success { color: #4ec9a0; }
+  .log-warn    { color: #dcdcaa; }
+  .log-error   { color: #f14c4c; }
+  .log-print   { color: #c586c0; font-weight: 600; }
+
+  /* -------------------- RWD：窄螢幕改成上下排列 -------------------- */
+  @media (max-width: 900px) {
+    #app { flex-direction: column; }
+    #blocklyPanel {
+      flex: 1 1 55%;
+      border-right: none;
+      border-bottom: 1px solid var(--vscode-border);
+    }
+    #controlPanel {
+      flex: 1 1 45%;
+      max-width: 100%;
+    }
+  }
+</style>
+</head>
+<body>
+
+  <!-- 頂部標題列，模仿 VS Code 外觀 -->
+  <div id="titlebar"><span class="dot"></span>Blockly ROS2 控制平台 &nbsp;|&nbsp; 嘉工電機-機器人操作介面</div>
+
+  <div id="app">
+    <!-- 左側：Blockly 編輯器 -->
+    <div id="blocklyPanel">
+      <div id="blocklyDiv"></div>
+    </div>
+
+    <!-- 右側：控制面板 -->
+    <div id="controlPanel">
+
+      <!-- ROS2 連線設定 -->
+      <div class="panel-section">
+        <div class="panel-title">ROS2 連線設定</div>
+
+        <label class="field-label" for="ipInput">ROS2 IP 位址</label>
+        <input type="text" id="ipInput" placeholder="192.168.1.100" value="192.168.1.100">
+
+        <label class="field-label" for="portInput">Port</label>
+        <input type="text" id="portInput" placeholder="9090" value="9090">
+
+        <div class="btn-row">
+          <button id="btnConnect" class="vscode-btn btn-primary">Connect</button>
+          <button id="btnDisconnect" class="vscode-btn btn-danger" disabled>Disconnect</button>
+        </div>
+
+        <div id="connectionStatus" class="disconnected">● 未連線</div>
+      </div>
+
+      <!-- 程式執行控制 -->
+      <div class="panel-section">
+        <div class="panel-title">程式執行控制</div>
+        <div class="btn-row">
+          <button id="btnRun" class="vscode-btn btn-success" disabled>▶ Run</button>
+          <button id="btnStop" class="vscode-btn btn-danger" disabled>■ Stop</button>
+          <button id="btnClear" class="vscode-btn btn-neutral">Clear Console</button>
+        </div>
+      </div>
+
+      <!-- 專案存檔 / 載入 -->
+      <div class="panel-section">
+        <div class="panel-title">專案存檔 / 載入</div>
+        <div class="btn-row">
+          <button id="btnSave" class="vscode-btn btn-primary">💾 儲存專案</button>
+          <button id="btnLoad" class="vscode-btn btn-neutral">📂 載入專案</button>
+        </div>
+        <input type="file" id="fileLoadInput" accept="application/json,.json" style="display: none">
+      </div>
+
+      <!-- Console 輸出 -->
+      <div class="panel-section console-section">
+        <div class="panel-title">Console 輸出</div>
+        <div id="consoleBox"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- Blockly 工具箱 (Toolbox) 定義：以 XML 描述所有分類與方塊       -->
+  <!-- ============================================================ -->
+  <xml id="toolbox" style="display: none">
+
+    <!-- Logic：邏輯判斷、比較、布林值 -->
+    <category name="邏輯" colour="210">
+      <block type="controls_if"></block>
+      <block type="logic_compare"></block>
+      <block type="logic_operation"></block>
+      <block type="logic_negate"></block>
+      <block type="logic_boolean"></block>
+      <block type="logic_ternary"></block>
+    </category>
+
+    <!-- Loops：repeat / while / for / break,continue -->
+    <category name="迴圈" colour="120">
+      <block type="controls_repeat_ext">
+        <value name="TIMES">
+          <shadow type="math_number"><field name="NUM">10</field></shadow>
+        </value>
+      </block>
+      <block type="controls_whileUntil"></block>
+      <block type="controls_for">
+        <value name="FROM"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+        <value name="TO"><shadow type="math_number"><field name="NUM">10</field></shadow></value>
+        <value name="BY"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+      </block>
+      <block type="controls_flow_statements"></block>
+    </category>
+
+    <!-- Math：四則運算、餘數、隨機、最大最小、四捨五入 -->
+    <category name="數學" colour="230">
+      <block type="math_number"></block>
+      <block type="math_arithmetic">
+        <value name="A"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+        <value name="B"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+      </block>
+      <block type="math_modulo">
+        <value name="DIVIDEND"><shadow type="math_number"><field name="NUM">64</field></shadow></value>
+        <value name="DIVISOR"><shadow type="math_number"><field name="NUM">10</field></shadow></value>
+      </block>
+      <block type="math_random_int">
+        <value name="FROM"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+        <value name="TO"><shadow type="math_number"><field name="NUM">100</field></shadow></value>
+      </block>
+      <block type="math_random_float"></block>
+      <block type="math_on_list"></block>
+      <block type="math_round">
+        <value name="NUM"><shadow type="math_number"><field name="NUM">3.14159</field></shadow></value>
+      </block>
+      <block type="math_single">
+        <value name="NUM"><shadow type="math_number"><field name="NUM">9</field></shadow></value>
+      </block>
+    </category>
+
+    <!-- Variables：動態變數清單 -->
+    <category name="變數" colour="330" custom="VARIABLE"></category>
+
+    <!-- Functions：程序 (自訂函式) -->
+    <category name="函式" colour="290" custom="PROCEDURE"></category>
+
+    <!-- Text：字串處理 -->
+    <category name="文字" colour="160">
+      <block type="text"></block>
+      <block type="text_join"></block>
+      <block type="text_append">
+        <value name="TEXT"><shadow type="text"><field name="TEXT"></field></shadow></value>
+      </block>
+      <block type="text_length">
+        <value name="VALUE"><shadow type="text"><field name="TEXT">abc</field></shadow></value>
+      </block>
+      <block type="text_isEmpty">
+        <value name="VALUE"><shadow type="text"><field name="TEXT"></field></shadow></value>
+      </block>
+      <block type="text_indexOf">
+        <value name="VALUE"><block type="variables_get"></block></value>
+        <value name="FIND"><shadow type="text"><field name="TEXT">abc</field></shadow></value>
+      </block>
+      <block type="text_charAt">
+        <value name="VALUE"><block type="variables_get"></block></value>
+      </block>
+      <block type="text_getSubstring">
+        <value name="STRING"><block type="variables_get"></block></value>
+      </block>
+      <block type="text_changeCase">
+        <value name="TEXT"><shadow type="text"><field name="TEXT">abc</field></shadow></value>
+      </block>
+      <block type="text_trim">
+        <value name="TEXT"><shadow type="text"><field name="TEXT">abc</field></shadow></value>
+      </block>
+      <block type="text_print">
+        <value name="TEXT"><shadow type="text"><field name="TEXT">abc</field></shadow></value>
+      </block>
+      <block type="text_prompt_ext">
+        <value name="TEXT"><shadow type="text"><field name="TEXT">請輸入內容</field></shadow></value>
+      </block>
+    </category>
+
+    <!-- Lists：清單處理 -->
+    <category name="清單" colour="260">
+      <block type="lists_create_with">
+        <mutation items="0"></mutation>
+      </block>
+      <block type="lists_create_with"></block>
+      <block type="lists_repeat">
+        <value name="NUM"><shadow type="math_number"><field name="NUM">5</field></shadow></value>
+      </block>
+      <block type="lists_length"></block>
+      <block type="lists_isEmpty"></block>
+      <block type="lists_indexOf">
+        <value name="VALUE"><block type="variables_get"></block></value>
+      </block>
+      <block type="lists_getIndex">
+        <value name="VALUE"><block type="variables_get"></block></value>
+      </block>
+      <block type="lists_setIndex">
+        <value name="LIST"><block type="variables_get"></block></value>
+      </block>
+      <block type="lists_getSublist">
+        <value name="LIST"><block type="variables_get"></block></value>
+      </block>
+      <block type="lists_split">
+        <value name="DELIM"><shadow type="text"><field name="TEXT">,</field></shadow></value>
+      </block>
+      <block type="lists_sort"></block>
+    </category>
+
+    <!-- Colour：顏色方塊 (自訂實作，因本 Blockly 套件版本未內建顏色欄位) -->
+    <category name="顏色" colour="20">
+      <block type="colour_picker"></block>
+      <block type="colour_random"></block>
+      <block type="colour_rgb">
+        <value name="RED"><shadow type="math_number"><field name="NUM">100</field></shadow></value>
+        <value name="GREEN"><shadow type="math_number"><field name="NUM">50</field></shadow></value>
+        <value name="BLUE"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+      </block>
+      <block type="colour_blend">
+        <value name="COLOUR1"><shadow type="colour_picker"></shadow></value>
+        <value name="COLOUR2"><shadow type="colour_picker"></shadow></value>
+        <value name="RATIO"><shadow type="math_number"><field name="NUM">0.5</field></shadow></value>
+      </block>
+    </category>
+
+    <sep></sep>
+
+    <!-- ROS2：自訂 Move / Cmd Vel / Lift / Gripper / Sleep / Scan / IMU 方塊 -->
+    <category name="ROS2 機器人控制" colour="174">
+      <block type="ros2_move_to">
+        <value name="X"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+        <value name="Y"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+        <value name="YAW"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+      </block>
+      <block type="ros2_cmd_vel">
+        <value name="LINEAR_X"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+        <value name="LINEAR_Y"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+        <value name="ANGULAR_Z"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+      </block>
+      <block type="ros2_lift">
+        <value name="ANGLE"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+      </block>
+      <block type="ros2_gripper">
+        <value name="ANGLE"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+      </block>
+      <block type="ros2_sleep">
+        <value name="SEC"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+      </block>
+      <block type="ros2_scan_distance">
+        <value name="ANGLE"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+      </block>
+      <block type="ros2_imu_yaw"></block>
+      <block type="text_print">
+        <value name="TEXT"><shadow type="text"><field name="TEXT">監控數值</field></shadow></value>
+      </block>
+      <block type="nav2_init_pose">
+        <value name="X"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+        <value name="Y"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+        <value name="YAW"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+      </block>
+      <block type="nav2_goal_to">
+        <value name="X"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+        <value name="Y"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+        <value name="YAW"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+      </block>
+    </category>
+
+  </xml>
+
+  <script>
+    /* ============================================================
+     * 全域狀態變數
+     * ============================================================ */
+    let ros = null;                 // ROSLIB.Ros 連線物件
+    let moveTopic = null;           // /move  發布用 topic (geometry_msgs/Vector3)
+    let moveStateTopic = null;      // /move_state 訂閱用 topic (std_msgs/Bool)
+    let servoTopic = null;          // /servo 發布用 topic (std_msgs/Int32MultiArray)
+    let initPoseTopic = null;       // /initialpose 發布用 topic (geometry_msgs/PoseWithCovarianceStamped)，供 Nav2 AMCL 初始定位
+    let goalPoseTopic = null;       // /goal_pose   發布用 topic (geometry_msgs/PoseStamped)，供 Nav2 導航至絕對座標目標
+    let cmdVelTopic = null;         // /cmd_vel 發布用 topic (geometry_msgs/Twist)
+    let scanTopic = null;           // /scan  訂閱用 topic (sensor_msgs/LaserScan)
+    let imuTopic = null;            // /imu   訂閱用 topic (sensor_msgs/Imu)
+
+    let workspace = null;           // Blockly 工作區物件
+
+    let isRunning = false;          // 目前是否有 Blockly 程式正在執行
+    let stopRequested = false;      // 使用者是否按下了 Stop
+
+    let pendingMoveStateResolve = null; // 等待 /move_state 出現 false→true 上升緣時的 Promise resolve callback
+    let activeCancel = null;            // 目前等待中的動作，可被 Stop 按鈕中斷的取消函式
+    let lastMoveState = null;           // 上一次收到的 /move_state 值，用來判斷是否發生了真正的 false→true 轉換（避免機器人持續發布舊的 true 導致提前結束）
+
+    let currentLift = 0;     // 目前 Lift (升降) 的角度，當 Gripper 單獨動作時用來維持此值不變
+    let currentGripper = 0;  // 目前 Gripper (夾爪) 的角度，當 Lift 單獨動作時用來維持此值不變
+
+    let lastScanMsg = null;  // 最新收到的 /scan (sensor_msgs/LaserScan) 訊息，供「掃描距離」方塊查詢
+    let lastImuMsg = null;   // 最新收到的 /imu (sensor_msgs/Imu) 訊息，供「IMU 偏航角」方塊查詢
+
+
+    /* ============================================================
+     * 自訂例外：代表使用者主動按下 Stop 中斷程式執行
+     * ============================================================ */
+    class StopSignal extends Error {
+      constructor() {
+        super('使用者已停止程式執行');
+        this.name = 'StopSignal';
+      }
+    }
+
+
+    /* ============================================================
+     * Console 輸出相關函式
+     * ============================================================ */
+
+    /**
+     * 在畫面右下方的 Console 區塊印出一行訊息。
+     * @param {string} message 要顯示的訊息內容
+     * @param {'info'|'success'|'warn'|'error'} type 訊息類型，用來決定顏色
+     */
+    function logConsole(message, type = 'info') {
+      const consoleBox = document.getElementById('consoleBox');
+      const line = document.createElement('div');
+      const time = new Date().toLocaleTimeString('zh-TW', { hour12: false });
+      line.className = `log-line log-${type}`;
+      line.textContent = `[${time}] ${message}`;
+      consoleBox.appendChild(line);
+      consoleBox.scrollTop = consoleBox.scrollHeight;
+    }
+
+    /** 清空 Console 內容 */
+    function clearConsole() {
+      document.getElementById('consoleBox').innerHTML = '';
+    }
+
+    /**
+     * 將方塊中的數值印出到 Console 輸出區，供監控變數/感測器數值使用。
+     * 對應「輸出」(text_print) 方塊，取代預設會跳出瀏覽器 alert 對話框、中斷程式執行的行為。
+     * @param {*} value 要監控印出的數值 (可為數字、文字、布林值等任意型別)
+     */
+    function printValue(value) {
+      logConsole(`🖨️ ${value}`, 'print');
+    }
+
+
+    /* ============================================================
+     * 可被 Stop 按鈕中斷的等待機制
+     * 使用 Promise + async/await，完全不使用 busy waiting / while(true) / setInterval 死迴圈
+     * ============================================================ */
+
+    /**
+     * 建立一個「可被中斷」的等待用 Promise。
+     * @param {(resolve: Function) => void} executor 開始等待時執行的函式，需在條件達成時呼叫 resolve()
+     * @param {() => void} [onCancel] 使用者按下 Stop 時要額外執行的清理動作 (例如清除計時器)
+     * @returns {Promise<void>}
+     */
+    function createInterruptibleWait(executor, onCancel) {
+      return new Promise((resolve, reject) => {
+        activeCancel = () => {
+          if (onCancel) onCancel();
+          reject(new StopSignal());
+        };
+        executor(() => {
+          activeCancel = null;
+          resolve();
+        });
+      });
+    }
+
+    /** 若使用者已按下 Stop，則立即拋出 StopSignal 中斷目前流程 */
+    function checkStopRequested() {
+      if (stopRequested) {
+        throw new StopSignal();
+      }
+    }
+
+
+    /* ============================================================
+     * ROS2 動作函式：Move To / Servo / Sleep
+     * 這些函式會被產生出來的 async JavaScript 程式碼呼叫 (例如 await moveTo(1,2,90))
+     * ============================================================ */
+
+    /**
+     * 發布 /move 座標指令，並等待 /move_state 變成 true 後才會結束（繼續下一個方塊）。
+     * @param {number} x 目標 X 座標
+     * @param {number} y 目標 Y 座標
+     * @param {number} yaw 目標朝向角度 (存放於 geometry_msgs/Vector3 的 z 欄位)
+     */
+    async function moveTo(x, y, yaw) {
+      checkStopRequested();
+
+      if (!ros || !ros.isConnected || !moveTopic || !moveStateTopic) {
+        logConsole('尚未連線到 ROS2，無法執行 Move To', 'error');
+        throw new Error('尚未連線到 ROS2');
+      }
+
+      logConsole(`Move開始: X=${x}, Y=${y}, Yaw=${yaw}`, 'info');
+
+      // 發布 /move topic (geometry_msgs/Vector3)，其中 z 欄位存放 Yaw
+      const moveMessage = new ROSLIB.Message({
+        x: Number(x),
+        y: Number(y),
+        z: Number(yaw)
+      });
+      moveTopic.publish(moveMessage);
+
+      // 等待 /move_state 出現 false→true 的上升緣，期間整個 Blockly 流程會暫停在這裡 (await)
+      // 不使用 busy waiting，而是透過訂閱回呼觸發 Promise resolve；
+      // 之所以要求「上升緣」而非「只要收到 true」，是因為機器人可能持續發布上一輪的舊 true 狀態，
+      // 若只檢查 true 會讓連續下達的第 2、3 個 Move 指令被舊訊息誤判為「已完成」而提前結束。
+      await createInterruptibleWait(
+        (resolve) => { pendingMoveStateResolve = resolve; },
+        () => { pendingMoveStateResolve = null; }
+      );
+
+      checkStopRequested();
+      logConsole('Move完成', 'success');
+    }
+
+    /**
+     * 發布 /servo 控制指令中的 Lift (升降) 角度。
+     * Gripper (夾爪) 不會被此命令改變，會維持上一次設定的角度 (currentGripper) 一同發布出去。
+     * @param {number} angle Lift 角度，對應 data[0]
+     */
+    async function servoLift(angle) {
+      checkStopRequested();
+
+      if (!ros || !ros.isConnected || !servoTopic) {
+        logConsole('尚未連線到 ROS2，無法執行 Lift', 'error');
+        throw new Error('尚未連線到 ROS2');
+      }
+
+      currentLift = Number(angle);
+      logConsole(`Lift送出: Lift=${currentLift} (Gripper維持=${currentGripper})`, 'info');
+
+      // 發布 /servo topic (std_msgs/Int32MultiArray)，同時帶上目前 Gripper 角度，避免 Gripper 被覆蓋成預設值
+      const servoMessage = new ROSLIB.Message({
+        data: [currentLift, currentGripper]
+      });
+      servoTopic.publish(servoMessage);
+    }
+
+    /**
+     * 發布 /servo 控制指令中的 Gripper (夾爪) 角度。
+     * Lift (升降) 不會被此命令改變，會維持上一次設定的角度 (currentLift) 一同發布出去。
+     * @param {number} angle Gripper 角度，對應 data[1]
+     */
+    async function servoGripper(angle) {
+      checkStopRequested();
+
+      if (!ros || !ros.isConnected || !servoTopic) {
+        logConsole('尚未連線到 ROS2，無法執行 Gripper', 'error');
+        throw new Error('尚未連線到 ROS2');
+      }
+
+      currentGripper = Number(angle);
+      logConsole(`Gripper送出: Gripper=${currentGripper} (Lift維持=${currentLift})`, 'info');
+
+      // 發布 /servo topic (std_msgs/Int32MultiArray)，同時帶上目前 Lift 角度，避免 Lift 被覆蓋成預設值
+      const servoMessage = new ROSLIB.Message({
+        data: [currentLift, currentGripper]
+      });
+      servoTopic.publish(servoMessage);
+    }
+
+    /**
+     * 暫停指定毫秒數後才繼續執行下一個方塊。
+     * @param {number} ms 要等待的毫秒數
+     */
+    async function sleep(ms) {
+      checkStopRequested();
+      logConsole(`Sleep 開始，等待 ${ms} 毫秒`, 'info');
+
+      let timerId = null;
+      await createInterruptibleWait(
+        (resolve) => { timerId = setTimeout(resolve, ms); },
+        () => { if (timerId) clearTimeout(timerId); }
+      );
+
+      checkStopRequested();
+      logConsole('Sleep 結束', 'info');
+    }
+
+    /**
+     * 發布 /cmd_vel 速度指令 (geometry_msgs/Twist)。屬於「即發即忘」指令，發布後立即繼續執行下一個方塊，
+     * 若需要持續移動一段時間，請自行搭配 Sleep 方塊或迴圈重複發布。
+     * @param {number} linearX 線速度 X (m/s)
+     * @param {number} linearY 線速度 Y (m/s)
+     * @param {number} angularZ 角速度 Z (rad/s)
+     */
+    async function cmdVel(linearX, linearY, angularZ) {
+      checkStopRequested();
+
+      if (!ros || !ros.isConnected || !cmdVelTopic) {
+        logConsole('尚未連線到 ROS2，無法發布 /cmd_vel', 'error');
+        throw new Error('尚未連線到 ROS2');
+      }
+
+      logConsole(`Cmd_vel發布: linear.x=${linearX}, linear.y=${linearY}, angular.z=${angularZ}`, 'info');
+
+      const twistMessage = new ROSLIB.Message({
+        linear: { x: Number(linearX), y: Number(linearY), z: 0 },
+        angular: { x: 0, y: 0, z: Number(angularZ) }
+      });
+      cmdVelTopic.publish(twistMessage);
+    }
+
+    /**
+     * 依指定角度 (度) 查詢最新一筆 /scan (sensor_msgs/LaserScan) 資料中對應的距離值 (公尺)。
+     * 屬於同步查詢函式：直接讀取訂閱回呼所快取的最新掃描資料，不會 await 等待。
+     * @param {number} angleDeg 要查詢的角度 (單位:度)
+     * @returns {number} 該角度對應的距離 (公尺)，若尚無掃描資料或角度超出範圍則回傳 NaN
+     */
+    function getScanDistance(angleDeg) {
+      if (!lastScanMsg) {
+        logConsole('尚未收到 /scan 資料，無法查詢掃描距離', 'warn');
+        return NaN;
+      }
+
+      const angleRad = Number(angleDeg) * Math.PI / 180;
+      const index = Math.round((angleRad - lastScanMsg.angle_min) / lastScanMsg.angle_increment);
+
+      if (index < 0 || index >= lastScanMsg.ranges.length) {
+        logConsole(`角度 ${angleDeg} 度超出 /scan 掃描範圍`, 'warn');
+        return NaN;
+      }
+
+      return lastScanMsg.ranges[index];
+    }
+
+    /**
+     * 依最新一筆 /imu (sensor_msgs/Imu) 資料計算偏航角 Yaw (度)。
+     * 屬於同步查詢函式：直接讀取訂閱回呼所快取的最新 IMU 資料，不會 await 等待。
+     * @returns {number} 計算後的 Yaw 角度 (單位:度)，若尚無 IMU 資料則回傳 NaN
+     */
+    function getImuYaw() {
+      if (!lastImuMsg) {
+        logConsole('尚未收到 /imu 資料，無法計算偏航角', 'warn');
+        return NaN;
+      }
+
+      // 由四元數 (quaternion) 計算繞 Z 軸的偏航角 (yaw)，公式參考標準 quaternion→euler 轉換
+      const q = lastImuMsg.orientation;
+      const sinYawCosPitch = 2 * (q.w * q.z + q.x * q.y);
+      const cosYawCosPitch = 1 - 2 * (q.y * q.y + q.z * q.z);
+      const yawRad = Math.atan2(sinYawCosPitch, cosYawCosPitch);
+
+      return yawRad * 180 / Math.PI;
+    }
+
+    /**
+     * 將角度 (degree) 轉換成 geometry_msgs/Quaternion 需要的 {x, y, z, w}。
+     * 僅考慮繞 Z 軸 (Yaw) 的平面旋轉，符合地面機器人 2D 導航的使用情境。
+     * @param {number} yawDeg Yaw 角度 (單位:度)
+     */
+    function yawDegToQuaternion(yawDeg) {
+      const halfRad = (Number(yawDeg) * Math.PI / 180) / 2;
+      return { x: 0, y: 0, z: Math.sin(halfRad), w: Math.cos(halfRad) };
+    }
+
+    /**
+     * 發布 /initialpose，讓 Nav2 (AMCL) 設定機器人於 map 座標系中的初始位置。
+     * 屬於「即發即忘」指令：Nav2 本身沒有提供初始化完成的回報訊息，
+     * 因此這裡不會 await 任何回應，發布後就會立刻繼續執行下一個方塊。
+     * @param {number} x Map 座標系下的 X (公尺)
+     * @param {number} y Map 座標系下的 Y (公尺)
+     * @param {number} yawDeg 初始朝向 Yaw (單位:度)
+     */
+    async function navInitPose(x, y, yawDeg) {
+      checkStopRequested();
+
+      if (!ros || !ros.isConnected || !initPoseTopic) {
+        logConsole('尚未連線到 ROS2，無法執行 Nav2 Init Pose', 'error');
+        throw new Error('尚未連線到 ROS2');
+      }
+
+      logConsole(`Nav2 Init Pose: X=${x}, Y=${y}, Yaw=${yawDeg}度`, 'info');
+
+      const initPoseMessage = new ROSLIB.Message({
+        header: { frame_id: 'map' },
+        pose: {
+          pose: {
+            position: { x: Number(x), y: Number(y), z: 0 },
+            orientation: yawDegToQuaternion(yawDeg)
+          },
+          // 沿用 RViz「2D Pose Estimate」預設的共變異數對角線數值
+          covariance: [
+            0.25, 0, 0, 0, 0, 0,
+            0, 0.25, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0.06853892326654787
+          ]
+        }
+      });
+      initPoseTopic.publish(initPoseMessage);
+
+      logConsole('Nav2 Init Pose 已發布', 'success');
+    }
+
+    /**
+     * 發布 /goal_pose，讓 Nav2 導航至 map 座標系中的絕對座標目標。
+     * 屬於「即發即忘」指令 (行為類似 RViz 的 2D Nav Goal 按鈕)：
+     * 發布後 Nav2 會在背景自行規劃路徑並前往目標，Blockly 流程不會在此暫停等待抵達，
+     * 而是立刻繼續執行下一個方塊。若需要等待抵達，請自行搭配 Sleep 方塊或後續邏輯判斷。
+     * @param {number} x Map 座標系下的目標 X (公尺)
+     * @param {number} y Map 座標系下的目標 Y (公尺)
+     * @param {number} yawDeg 目標朝向 Yaw (單位:度)
+     */
+    async function navGoalTo(x, y, yawDeg) {
+      checkStopRequested();
+
+      if (!ros || !ros.isConnected || !goalPoseTopic) {
+        logConsole('尚未連線到 ROS2，無法執行 Nav2 Goal To', 'error');
+        throw new Error('尚未連線到 ROS2');
+      }
+
+      logConsole(`Nav2 Goal To: X=${x}, Y=${y}, Yaw=${yawDeg}度 (不等待抵達)`, 'info');
+
+      const goalPoseMessage = new ROSLIB.Message({
+        header: { frame_id: 'map' },
+        pose: {
+          position: { x: Number(x), y: Number(y), z: 0 },
+          orientation: yawDegToQuaternion(yawDeg)
+        }
+      });
+      goalPoseTopic.publish(goalPoseMessage);
+
+      logConsole('Nav2 Goal To 已發布', 'success');
+    }
+
+
+    /* ============================================================
+     * ROS2 WebSocket 連線相關函式
+     * ============================================================ */
+
+    /** 依照畫面輸入的 IP / Port 建立與 rosbridge_websocket 的連線 */
+    function connectRos() {
+      if (ros && ros.isConnected) {
+        logConsole('已經連線，請先斷線再重新連線', 'warn');
+        return;
+      }
+
+      const ip = document.getElementById('ipInput').value.trim();
+      const port = document.getElementById('portInput').value.trim() || '9090';
+
+      if (!ip) {
+        logConsole('請輸入 ROS2 主機 IP', 'error');
+        return;
+      }
+
+      const url = `ws://${ip}:${port}`;
+      logConsole(`嘗試連線到 ${url} ...`, 'info');
+
+      ros = new ROSLIB.Ros({ url: url });
+
+      ros.on('connection', function () {
+        logConsole('WebSocket連線成功', 'success');
+        updateConnectionStatus(true);
+        setupTopics();
+      });
+
+      ros.on('error', function (error) {
+        logConsole(`WebSocket連線錯誤: ${error}`, 'error');
+        updateConnectionStatus(false);
+      });
+
+      ros.on('close', function () {
+        logConsole('WebSocket斷線', 'warn');
+        updateConnectionStatus(false);
+      });
+    }
+
+    /** 中斷與 rosbridge_websocket 的連線 */
+    function disconnectRos() {
+      if (ros) {
+        ros.close();
+      }
+    }
+
+    /** 連線成功後建立 /move、/move_state、/servo 三個 topic，並訂閱 /move_state */
+    function setupTopics() {
+      moveTopic = new ROSLIB.Topic({
+        ros: ros,
+        name: '/move',
+        messageType: 'geometry_msgs/Vector3'
+      });
+
+      moveStateTopic = new ROSLIB.Topic({
+        ros: ros,
+        name: '/move_state',
+        messageType: 'std_msgs/Bool'
+      });
+
+      servoTopic = new ROSLIB.Topic({
+        ros: ros,
+        name: '/servo',
+        messageType: 'std_msgs/Int32MultiArray'
+      });
+
+      initPoseTopic = new ROSLIB.Topic({
+        ros: ros,
+        name: '/initialpose',
+        messageType: 'geometry_msgs/PoseWithCovarianceStamped'
+      });
+
+      goalPoseTopic = new ROSLIB.Topic({
+        ros: ros,
+        name: '/goal_pose',
+        messageType: 'geometry_msgs/PoseStamped'
+      });
+
+      cmdVelTopic = new ROSLIB.Topic({
+        ros: ros,
+        name: '/cmd_vel',
+        messageType: 'geometry_msgs/Twist'
+      });
+
+      scanTopic = new ROSLIB.Topic({
+        ros: ros,
+        name: '/scan',
+        messageType: 'sensor_msgs/LaserScan'
+      });
+
+      imuTopic = new ROSLIB.Topic({
+        ros: ros,
+        name: '/imu',
+        messageType: 'sensor_msgs/Imu'
+      });
+
+      // 每次重新連線時重置狀態記憶，避免帶入上次連線的舊狀態
+      lastMoveState = null;
+      lastScanMsg = null;
+      lastImuMsg = null;
+
+      // 訂閱 /move_state：機器人可能會持續重複發布同一個值 (例如一直是 true)，
+      // 若只單純檢查「收到 true 就完成」，在連續下達多個 Move 指令時，
+      // 第 2、3 個指令會被「還沒開始移動、但殘留的舊 true 訊息」誤判為已完成。
+      // 因此改為偵測 false→true 的「上升緣」，只有真正從 false 轉為 true 才視為本次移動完成。
+      moveStateTopic.subscribe(function (message) {
+        const newState = !!message.data;
+
+        if (newState !== lastMoveState) {
+          logConsole(`/move_state 狀態變化: ${lastMoveState} → ${newState}`, 'info');
+        }
+
+        if (newState === true && lastMoveState === false && pendingMoveStateResolve) {
+          const resolve = pendingMoveStateResolve;
+          pendingMoveStateResolve = null;
+          logConsole('偵測到 /move_state 由 false→true，判定本次 Move 已完成', 'success');
+          resolve();
+        }
+
+        lastMoveState = newState;
+      });
+
+      // 訂閱 /scan：只需快取最新一筆掃描資料，供「掃描距離」方塊隨時查詢
+      scanTopic.subscribe(function (message) {
+        lastScanMsg = message;
+      });
+
+      // 訂閱 /imu：只需快取最新一筆 IMU 資料，供「IMU 偏航角」方塊隨時查詢
+      imuTopic.subscribe(function (message) {
+        lastImuMsg = message;
+      });
+
+      logConsole('已建立 /move、/servo、/initialpose、/goal_pose、/cmd_vel 發布者，並訂閱 /move_state、/scan、/imu', 'info');
+    }
+
+    /**
+     * 更新畫面上的連線狀態顯示與按鈕啟用/停用狀態。
+     * @param {boolean} connected 目前是否已連線
+     */
+    function updateConnectionStatus(connected) {
+      const statusEl = document.getElementById('connectionStatus');
+      if (connected) {
+        statusEl.textContent = '● 已連線';
+        statusEl.className = 'connected';
+      } else {
+        statusEl.textContent = '● 未連線';
+        statusEl.className = 'disconnected';
+      }
+
+      document.getElementById('btnConnect').disabled = connected;
+      document.getElementById('btnDisconnect').disabled = !connected;
+
+      updateButtonState();
+    }
+
+    /** 依照目前連線 / 執行狀態，更新 Run / Stop 按鈕是否可點擊 */
+    function updateButtonState() {
+      const connected = !!(ros && ros.isConnected);
+      document.getElementById('btnRun').disabled = isRunning || !connected;
+      document.getElementById('btnStop').disabled = !isRunning;
+    }
+
+
+    /* ============================================================
+     * 顏色處理輔助函式 (供 Colour 分類產生的程式碼呼叫)
+     * ============================================================ */
+
+    /**
+     * 將紅/綠/藍 (0~100 百分比) 轉換成 16 進位色碼字串，例如 '#ff8000'。
+     */
+    function rgbToHex(r, g, b) {
+      const clamp = (n) => Math.max(0, Math.min(100, Number(n) || 0));
+      const toHex = (n) => {
+        const v = Math.round(clamp(n) * 2.55);
+        return ('0' + v.toString(16)).slice(-2);
+      };
+      return '#' + toHex(r) + toHex(g) + toHex(b);
+    }
+
+    /**
+     * 依比例 (0~1) 混合兩個 16 進位色碼字串，回傳混合後的色碼。
+     */
+    function blendColours(colour1, colour2, ratio) {
+      const r = Math.max(0, Math.min(1, Number(ratio) || 0));
+      const parseHex = (hex) => [1, 3, 5].map((i) => parseInt(String(hex).substr(i, 2), 16) || 0);
+      const [r1, g1, b1] = parseHex(colour1);
+      const [r2, g2, b2] = parseHex(colour2);
+      const toHex = (n) => ('0' + Math.round(n).toString(16)).slice(-2);
+      return '#' + toHex(r1 * (1 - r) + r2 * r) + toHex(g1 * (1 - r) + g2 * r) + toHex(b1 * (1 - r) + b2 * r);
+    }
+
+
+    /* ============================================================
+     * 自訂顏色欄位 (FieldColourCustom)
+     * 因本專案所使用的 Blockly 套件版本未內建顏色欄位 (field_colour)，
+     * 故以原生 <input type="color"> 實作一個最小可用的顏色選擇欄位。
+     * ============================================================ */
+
+    class FieldColourCustom extends Blockly.Field {
+      constructor(colour) {
+        super(colour || '#ff0000');
+        this.SERIALIZABLE = true;
+        this.CURSOR = 'pointer';
+      }
+
+      static fromJson(options) {
+        return new FieldColourCustom(options['colour']);
+      }
+
+      /** 驗證輸入值必須是合法的 #rrggbb 色碼字串 */
+      doClassValidation_(newValue) {
+        if (typeof newValue !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(newValue)) {
+          return null;
+        }
+        return newValue.toLowerCase();
+      }
+
+      /** 建立欄位的 SVG 外觀：一個顯示目前顏色的小色塊 */
+      initView() {
+        this.size_.width = 40;
+        this.size_.height = 20;
+        this.colourRect_ = Blockly.utils.dom.createSvgElement(
+          'rect',
+          { width: 40, height: 20, rx: 4, ry: 4, stroke: '#ffffff', 'stroke-width': 1 },
+          this.fieldGroup_
+        );
+        // 使用 inline style 設定填色，避免被 Blockly 內建的 .blocklyEditableField 樣式表覆蓋
+        this.colourRect_.style.fill = this.getValue();
+        this.colourRect_.style.fillOpacity = '1';
+      }
+
+      /** 數值變更時，更新色塊的填色 */
+      render_() {
+        if (this.colourRect_) {
+          this.colourRect_.style.fill = this.getValue();
+        }
+      }
+
+      /** 點擊欄位時，開啟瀏覽器原生的顏色選擇器 */
+      showEditor_() {
+        const input = document.createElement('input');
+        input.type = 'color';
+        input.value = this.getValue();
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        input.style.pointerEvents = 'none';
+        document.body.appendChild(input);
+        input.addEventListener('input', () => this.setValue(input.value));
+        input.addEventListener('change', () => input.remove());
+        input.click();
+      }
+    }
+
+    Blockly.fieldRegistry.register('field_colour_custom', FieldColourCustom);
+
+
+    /* ============================================================
+     * Blockly 自訂方塊定義：Colour 分類 (顏色選擇 / 隨機 / RGB / 混合)
+     * ============================================================ */
+
+    Blockly.Blocks['colour_picker'] = {
+      init: function () {
+        this.appendDummyInput().appendField(new FieldColourCustom('#ff0000'), 'COLOUR');
+        this.setOutput(true, 'Colour');
+        this.setColour(20);
+        this.setTooltip('選擇一個顏色');
+        this.setHelpUrl('');
+      }
+    };
+
+    Blockly.Blocks['colour_random'] = {
+      init: function () {
+        this.appendDummyInput().appendField('隨機顏色');
+        this.setOutput(true, 'Colour');
+        this.setColour(20);
+        this.setTooltip('產生一個隨機顏色');
+        this.setHelpUrl('');
+      }
+    };
+
+    Blockly.Blocks['colour_rgb'] = {
+      init: function () {
+        this.appendValueInput('RED').setCheck('Number').appendField('🎨 用紅');
+        this.appendValueInput('GREEN').setCheck('Number').appendField('綠');
+        this.appendValueInput('BLUE').setCheck('Number').appendField('藍');
+        this.appendDummyInput().appendField('組成顏色 (0~100)');
+        this.setInputsInline(true);
+        this.setOutput(true, 'Colour');
+        this.setColour(20);
+        this.setTooltip('依紅/綠/藍 (0~100) 組成顏色');
+        this.setHelpUrl('');
+      }
+    };
+
+    Blockly.Blocks['colour_blend'] = {
+      init: function () {
+        this.appendValueInput('COLOUR1').setCheck('Colour').appendField('混合顏色');
+        this.appendValueInput('COLOUR2').setCheck('Colour').appendField('與');
+        this.appendValueInput('RATIO').setCheck('Number').appendField('比例');
+        this.setInputsInline(true);
+        this.setOutput(true, 'Colour');
+        this.setColour(20);
+        this.setTooltip('混合兩個顏色 (比例 0~1)');
+        this.setHelpUrl('');
+      }
+    };
+
+
+    /* ============================================================
+     * Blockly 自訂方塊定義：ROS2 分類 (Move To / Servo / Sleep)
+     * ============================================================ */
+
+    // ---------- Move To 方塊：輸入 X / Y / Yaw ----------
+    Blockly.Blocks['ros2_move_to'] = {
+      init: function () {
+        this.appendValueInput('X').setCheck('Number').appendField('🚗 移動到   X');
+        this.appendValueInput('Y').setCheck('Number').appendField('Y');
+        this.appendValueInput('YAW').setCheck('Number').appendField('Yaw');
+        this.setInputsInline(true);
+        this.setPreviousStatement(true, null);
+        this.setNextStatement(true, null);
+        this.setColour(174);
+        this.setTooltip('發布 /move 座標指令，並等待 /move_state 回傳 true 後才繼續執行下一個方塊');
+        this.setHelpUrl('');
+      }
+    };
+
+    // ---------- Lift 方塊：只控制升降角度，Gripper 維持不變 ----------
+    Blockly.Blocks['ros2_lift'] = {
+      init: function () {
+        this.appendValueInput('ANGLE').setCheck('Number').appendField('🔼 升降 Lift 角度');
+        this.setInputsInline(true);
+        this.setPreviousStatement(true, null);
+        this.setNextStatement(true, null);
+        this.setColour(174);
+        this.setTooltip('發布 /servo 控制指令設定升降 (Lift) 角度，夾爪 (Gripper) 會維持上一次設定的角度不會被改變');
+        this.setHelpUrl('');
+      }
+    };
+
+    // ---------- Gripper 方塊：只控制夾爪角度，Lift 維持不變 ----------
+    Blockly.Blocks['ros2_gripper'] = {
+      init: function () {
+        this.appendValueInput('ANGLE').setCheck('Number').appendField('✊ 夾爪 Gripper 角度');
+        this.setInputsInline(true);
+        this.setPreviousStatement(true, null);
+        this.setNextStatement(true, null);
+        this.setColour(174);
+        this.setTooltip('發布 /servo 控制指令設定夾爪 (Gripper) 角度，升降 (Lift) 會維持上一次設定的角度不會被改變');
+        this.setHelpUrl('');
+      }
+    };
+
+    // ---------- Cmd Vel 方塊：發布 /cmd_vel，控制線速度 X/Y 與角速度 Z ----------
+    Blockly.Blocks['ros2_cmd_vel'] = {
+      init: function () {
+        this.appendValueInput('LINEAR_X').setCheck('Number').appendField('🏎️ Cmd Vel   線速度X');
+        this.appendValueInput('LINEAR_Y').setCheck('Number').appendField('線速度Y');
+        this.appendValueInput('ANGULAR_Z').setCheck('Number').appendField('角速度Z');
+        this.setInputsInline(true);
+        this.setPreviousStatement(true, null);
+        this.setNextStatement(true, null);
+        this.setColour(174);
+        this.setTooltip('發布 /cmd_vel 速度指令 (geometry_msgs/Twist)，即發即忘，發布後立即繼續執行下一個方塊');
+        this.setHelpUrl('');
+      }
+    };
+
+    // ---------- Sleep 方塊：輸入等待秒數 ----------
+    Blockly.Blocks['ros2_sleep'] = {
+      init: function () {
+        this.appendValueInput('SEC').setCheck('Number').appendField('⏱ Sleep 等待');
+        this.appendDummyInput().appendField('秒');
+        this.setInputsInline(true);
+        this.setPreviousStatement(true, null);
+        this.setNextStatement(true, null);
+        this.setColour(174);
+        this.setTooltip('暫停指定秒數後才繼續執行下一個方塊');
+        this.setHelpUrl('');
+      }
+    };
+
+    // ---------- 掃描距離方塊：訂閱 /scan，輸入角度回傳該角度的距離 (公尺) ----------
+    Blockly.Blocks['ros2_scan_distance'] = {
+      init: function () {
+        this.appendValueInput('ANGLE').setCheck('Number').appendField('📡 掃描距離   角度');
+        this.appendDummyInput().appendField('度');
+        this.setInputsInline(true);
+        this.setOutput(true, 'Number');
+        this.setColour(174);
+        this.setTooltip('訂閱 /scan (sensor_msgs/LaserScan)，回傳指定角度上最新的掃描距離 (公尺)');
+        this.setHelpUrl('');
+      }
+    };
+
+    // ---------- IMU 偏航角方塊：訂閱 /imu，回傳計算後的偏航角 Yaw (度) ----------
+    Blockly.Blocks['ros2_imu_yaw'] = {
+      init: function () {
+        this.appendDummyInput().appendField('🧭 IMU 偏航角 Yaw');
+        this.setOutput(true, 'Number');
+        this.setColour(174);
+        this.setTooltip('訂閱 /imu (sensor_msgs/Imu)，回傳由四元數計算後的偏航角 Yaw (單位:度)');
+        this.setHelpUrl('');
+      }
+    };
+
+    // ---------- Nav2 Init Pose 方塊：發布 /initialpose，設定 Nav2 (AMCL) 初始位置 ----------
+    Blockly.Blocks['nav2_init_pose'] = {
+      init: function () {
+        this.appendValueInput('X').setCheck('Number').appendField('🧭 Nav2 初始化位置   X');
+        this.appendValueInput('Y').setCheck('Number').appendField('Y');
+        this.appendValueInput('YAW').setCheck('Number').appendField('Yaw(度)');
+        this.setInputsInline(true);
+        this.setPreviousStatement(true, null);
+        this.setNextStatement(true, null);
+        this.setColour(174);
+        this.setTooltip('發布 /initialpose (map 座標系)，設定 Nav2 AMCL 的初始位置與朝向。即發即忘，發布後立即繼續執行下一個方塊');
+        this.setHelpUrl('');
+      }
+    };
+
+    // ---------- Nav2 Goal To 方塊：發布 /goal_pose，前往 map 座標系下的絕對目標 ----------
+    Blockly.Blocks['nav2_goal_to'] = {
+      init: function () {
+        this.appendValueInput('X').setCheck('Number').appendField('🧭 Nav2 前往目標   X');
+        this.appendValueInput('Y').setCheck('Number').appendField('Y');
+        this.appendValueInput('YAW').setCheck('Number').appendField('Yaw(度)');
+        this.setInputsInline(true);
+        this.setPreviousStatement(true, null);
+        this.setNextStatement(true, null);
+        this.setColour(174);
+        this.setTooltip('發布 /goal_pose (map 座標系)，讓 Nav2 自行規劃路徑前往絕對座標目標。即發即忘，不會等待抵達，發布後立即繼續執行下一個方塊');
+        this.setHelpUrl('');
+      }
+    };
+
+
+    /* ============================================================
+     * Blockly JavaScript Generator：Colour 分類方塊的程式碼產生器
+     * ============================================================ */
+
+    Blockly.JavaScript.forBlock['colour_picker'] = function (block) {
+      const code = `'${block.getFieldValue('COLOUR')}'`;
+      return [code, Blockly.JavaScript.ORDER_ATOMIC];
+    };
+
+    Blockly.JavaScript.forBlock['colour_random'] = function () {
+      const code = "('#' + Math.floor(Math.random() * 16777216).toString(16).padStart(6, '0'))";
+      return [code, Blockly.JavaScript.ORDER_ATOMIC];
+    };
+
+    Blockly.JavaScript.forBlock['colour_rgb'] = function (block, generator) {
+      const r = generator.valueToCode(block, 'RED', Blockly.JavaScript.ORDER_NONE) || 0;
+      const g = generator.valueToCode(block, 'GREEN', Blockly.JavaScript.ORDER_NONE) || 0;
+      const b = generator.valueToCode(block, 'BLUE', Blockly.JavaScript.ORDER_NONE) || 0;
+      const code = `rgbToHex(${r}, ${g}, ${b})`;
+      return [code, Blockly.JavaScript.ORDER_FUNCTION_CALL];
+    };
+
+    Blockly.JavaScript.forBlock['colour_blend'] = function (block, generator) {
+      const c1 = generator.valueToCode(block, 'COLOUR1', Blockly.JavaScript.ORDER_NONE) || "'#000000'";
+      const c2 = generator.valueToCode(block, 'COLOUR2', Blockly.JavaScript.ORDER_NONE) || "'#000000'";
+      const ratio = generator.valueToCode(block, 'RATIO', Blockly.JavaScript.ORDER_NONE) || 0.5;
+      const code = `blendColours(${c1}, ${c2}, ${ratio})`;
+      return [code, Blockly.JavaScript.ORDER_FUNCTION_CALL];
+    };
+
+
+    /* ============================================================
+     * Blockly JavaScript Generator：把方塊轉換成 async JavaScript 程式碼
+     * 例如 await moveTo(1, 2, 90);
+     * ============================================================ */
+
+    Blockly.JavaScript.forBlock['ros2_move_to'] = function (block, generator) {
+      const x = generator.valueToCode(block, 'X', Blockly.JavaScript.ORDER_NONE) || '0';
+      const y = generator.valueToCode(block, 'Y', Blockly.JavaScript.ORDER_NONE) || '0';
+      const yaw = generator.valueToCode(block, 'YAW', Blockly.JavaScript.ORDER_NONE) || '0';
+      return `await moveTo(${x}, ${y}, ${yaw});\n`;
+    };
+
+    Blockly.JavaScript.forBlock['ros2_lift'] = function (block, generator) {
+      const angle = generator.valueToCode(block, 'ANGLE', Blockly.JavaScript.ORDER_NONE) || '0';
+      return `await servoLift(${angle});\n`;
+    };
+
+    Blockly.JavaScript.forBlock['ros2_gripper'] = function (block, generator) {
+      const angle = generator.valueToCode(block, 'ANGLE', Blockly.JavaScript.ORDER_NONE) || '0';
+      return `await servoGripper(${angle});\n`;
+    };
+
+    Blockly.JavaScript.forBlock['ros2_cmd_vel'] = function (block, generator) {
+      const linearX = generator.valueToCode(block, 'LINEAR_X', Blockly.JavaScript.ORDER_NONE) || '0';
+      const linearY = generator.valueToCode(block, 'LINEAR_Y', Blockly.JavaScript.ORDER_NONE) || '0';
+      const angularZ = generator.valueToCode(block, 'ANGULAR_Z', Blockly.JavaScript.ORDER_NONE) || '0';
+      return `await cmdVel(${linearX}, ${linearY}, ${angularZ});\n`;
+    };
+
+    Blockly.JavaScript.forBlock['ros2_sleep'] = function (block, generator) {
+      const sec = generator.valueToCode(block, 'SEC', Blockly.JavaScript.ORDER_NONE) || '0';
+      // 方塊介面上輸入的是「秒」，實際呼叫時轉換成毫秒 (ms) 傳給 sleep()
+      return `await sleep((${sec}) * 1000);\n`;
+    };
+
+    Blockly.JavaScript.forBlock['ros2_scan_distance'] = function (block, generator) {
+      const angle = generator.valueToCode(block, 'ANGLE', Blockly.JavaScript.ORDER_NONE) || '0';
+      const code = `getScanDistance(${angle})`;
+      return [code, Blockly.JavaScript.ORDER_FUNCTION_CALL];
+    };
+
+    Blockly.JavaScript.forBlock['ros2_imu_yaw'] = function () {
+      const code = 'getImuYaw()';
+      return [code, Blockly.JavaScript.ORDER_FUNCTION_CALL];
+    };
+
+    Blockly.JavaScript.forBlock['nav2_init_pose'] = function (block, generator) {
+      const x = generator.valueToCode(block, 'X', Blockly.JavaScript.ORDER_NONE) || '0';
+      const y = generator.valueToCode(block, 'Y', Blockly.JavaScript.ORDER_NONE) || '0';
+      const yaw = generator.valueToCode(block, 'YAW', Blockly.JavaScript.ORDER_NONE) || '0';
+      return `await navInitPose(${x}, ${y}, ${yaw});\n`;
+    };
+
+    Blockly.JavaScript.forBlock['nav2_goal_to'] = function (block, generator) {
+      const x = generator.valueToCode(block, 'X', Blockly.JavaScript.ORDER_NONE) || '0';
+      const y = generator.valueToCode(block, 'Y', Blockly.JavaScript.ORDER_NONE) || '0';
+      const yaw = generator.valueToCode(block, 'YAW', Blockly.JavaScript.ORDER_NONE) || '0';
+      return `await navGoalTo(${x}, ${y}, ${yaw});\n`;
+    };
+
+
+    /* ============================================================
+     * Text 分類：覆寫內建「輸出」(text_print) 方塊的程式碼產生器
+     * 預設產生的是會凍結畫面、中斷程式流程的 window.alert()，
+     * 改為印到右下角 Console 輸出區，適合用來監控數值 (例如掃描距離、IMU 偏航角)。
+     * ============================================================ */
+    Blockly.JavaScript.forBlock['text_print'] = function (block, generator) {
+      const value = generator.valueToCode(block, 'TEXT', Blockly.JavaScript.ORDER_NONE) || "''";
+      return `printValue(${value});\n`;
+    };
+
+
+    /* ============================================================
+     * 自訂 Blockly 深色主題，呼應 VS Code 外觀
+     * (此 Blockly 套件版本未內建 Dark 主題檔，因此手動定義)
+     * ============================================================ */
+    const vscodeDarkTheme = Blockly.Theme.defineTheme('vscodeDark', {
+      base: Blockly.Themes.Classic,
+      componentStyles: {
+        workspaceBackgroundColour: '#1e1e1e',
+        toolboxBackgroundColour: '#252526',
+        toolboxForegroundColour: '#cccccc',
+        flyoutBackgroundColour: '#2d2d30',
+        flyoutForegroundColour: '#cccccc',
+        flyoutOpacity: 1,
+        scrollbarColour: '#5a5a5a',
+        scrollbarOpacity: 0.6,
+        insertionMarkerColour: '#ffffff',
+        insertionMarkerOpacity: 0.3,
+        markerColour: '#4ec9a0',
+        cursorColour: '#4ec9a0'
+      },
+      fontStyle: { family: '"Segoe UI", "Microsoft JhengHei", "PingFang TC", Arial, sans-serif', size: 10 }
+    });
+
+    /* ============================================================
+     * Blockly 工作區初始化
+     * ============================================================ */
+
+    function initBlockly() {
+      workspace = Blockly.inject('blocklyDiv', {
+        toolbox: document.getElementById('toolbox'),
+        theme: vscodeDarkTheme,                // 自訂深色主題，呼應 VS Code 風格
+        grid: { spacing: 20, length: 3, colour: '#3c3c3c', snap: true },
+        zoom: { controls: true, wheel: true, startScale: 1.0, maxScale: 3, minScale: 0.3, scaleSpeed: 1.2 },
+        trashcan: true
+      });
+
+      window.addEventListener('resize', onWindowResize);
+      onWindowResize();
+    }
+
+    /** 視窗大小改變時，通知 Blockly 重新計算畫布尺寸 (支援 RWD) */
+    function onWindowResize() {
+      if (workspace) {
+        Blockly.svgResize(workspace);
+      }
+    }
+
+
+    /* ============================================================
+     * 程式碼產生 / 執行 / 停止
+     * ============================================================ */
+
+    /** 將目前 Blockly 工作區轉換成 async JavaScript 程式碼字串 (供 Run 內部使用) */
+    function generateCode() {
+      return Blockly.JavaScript.workspaceToCode(workspace);
+    }
+
+    /** 執行目前 Blockly 工作區產生出來的 async JavaScript 程式碼 */
+    async function runCode() {
+      if (isRunning) {
+        logConsole('程式正在執行中，請先按下 Stop', 'warn');
+        return;
+      }
+      if (!ros || !ros.isConnected) {
+        logConsole('請先連線至 ROS2 再執行程式', 'error');
+        return;
+      }
+
+      const code = generateCode();
+
+      stopRequested = false;
+      isRunning = true;
+      updateButtonState();
+      logConsole('=== 開始執行 Blockly 程式 ===', 'info');
+
+      try {
+        // 使用 AsyncFunction 建構子，將產生的程式碼包裝成一個 async 函式來執行，
+        // 讓程式碼中的 await moveTo() / await servoLift() / await servoGripper() / await cmdVel() / await sleep() 可以正確運作。
+        const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+        const runner = new AsyncFunction('moveTo', 'servoLift', 'servoGripper', 'cmdVel', 'sleep', 'navInitPose', 'navGoalTo', code);
+        await runner(moveTo, servoLift, servoGripper, cmdVel, sleep, navInitPose, navGoalTo);
+
+        logConsole('=== 程式執行完成 ===', 'success');
+      } catch (error) {
+        if (error instanceof StopSignal) {
+          logConsole('=== 程式已被使用者停止 ===', 'warn');
+        } else {
+          logConsole(`=== 程式執行發生錯誤: ${error.message} ===`, 'error');
+        }
+      } finally {
+        isRunning = false;
+        stopRequested = false;
+        activeCancel = null;
+        updateButtonState();
+      }
+    }
+
+    /** 中斷正在執行的 Blockly 程式 */
+    function stopExecution() {
+      if (!isRunning) {
+        logConsole('目前沒有程式正在執行', 'warn');
+        return;
+      }
+      stopRequested = true;
+      if (activeCancel) {
+        const cancel = activeCancel;
+        activeCancel = null;
+        cancel();
+      }
+      logConsole('已送出停止指令...', 'warn');
+    }
+
+
+    /* ============================================================
+     * 專案存檔 / 載入
+     * 使用 Blockly 內建的 serialization API，將工作區狀態儲存為 JSON。
+     * ============================================================ */
+
+    /** 將目前工作區內容儲存為 JSON 檔案，並觸發瀏覽器下載 */
+    function saveWorkspace() {
+      if (!workspace) return;
+
+      const state = Blockly.serialization.workspaces.save(workspace);
+      const json = JSON.stringify(state, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `blockly_ros2_${timestamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+
+      logConsole('專案已儲存為檔案', 'success');
+    }
+
+    /** 讀取使用者選擇的 JSON 檔案，並從中重建 Blockly 工作區內容 */
+    function loadWorkspaceFromFile(file) {
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (event) {
+        try {
+          const state = JSON.parse(event.target.result);
+          workspace.clear();
+          Blockly.serialization.workspaces.load(state, workspace);
+          logConsole(`已載入專案: ${file.name}`, 'success');
+        } catch (error) {
+          logConsole(`載入專案失敗: ${error.message}`, 'error');
+        }
+      };
+      reader.onerror = function () {
+        logConsole('讀取檔案失敗', 'error');
+      };
+      reader.readAsText(file);
+    }
+
+
+    /* ============================================================
+     * 事件綁定 與 系統初始化
+     * ============================================================ */
+
+    document.getElementById('btnConnect').addEventListener('click', connectRos);
+    document.getElementById('btnDisconnect').addEventListener('click', disconnectRos);
+    document.getElementById('btnRun').addEventListener('click', runCode);
+    document.getElementById('btnStop').addEventListener('click', stopExecution);
+    document.getElementById('btnClear').addEventListener('click', clearConsole);
+    document.getElementById('btnSave').addEventListener('click', saveWorkspace);
+    document.getElementById('btnLoad').addEventListener('click', () => {
+      document.getElementById('fileLoadInput').click();
+    });
+    document.getElementById('fileLoadInput').addEventListener('change', (event) => {
+      const file = event.target.files[0];
+      loadWorkspaceFromFile(file);
+      event.target.value = ''; // 清空選擇，方便下次可以重新載入同一個檔案
+    });
+
+    // 初始化 Blockly 編輯器，並印出歡迎訊息
+    initBlockly();
+    updateButtonState();
+    logConsole('系統已就緒，請輸入 ROS2 IP 並按下 Connect 進行連線', 'info');
+  </script>
+
+</body>
+</html>
